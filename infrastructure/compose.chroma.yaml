@@ -1,0 +1,23 @@
+services:
+  chroma:
+    image: chromadb/chroma:1.5.9
+    container_name: memoryhub-chroma
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /data
+      ANONYMIZED_TELEMETRY: "FALSE"
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - chroma_data:/data
+    healthcheck:
+      test: ["CMD", "perl", "-MIO::Socket::INET", "-e", "my $$s = IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => 8000, Timeout => 2) or exit 1; exit 0;"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  chroma_data:
+    name: memoryhub_chroma_data

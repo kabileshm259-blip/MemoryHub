@@ -1,0 +1,49 @@
+# Node.js and Next.js
+node_modules/
+.next/
+out/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and generated vector data
+chroma_data/
+data/local/
+*.sqlite
+*.sqlite3
+*.log
+*.tmp
+*.bak
+
+# Build outputs
+frontend/.next/
+backend/__pycache__/
+
+# IDE and operating system
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+desktop.ini
