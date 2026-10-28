@@ -254,6 +254,7 @@ export interface AskQuestionResponse {
   citations: CitationItem[];
   confidence: number;
   has_sufficient_evidence: boolean;
+  provider_mode?: "heuristic" | "gemini" | "heuristic_fallback" | string;
 }
 
 export interface GenerateHandoffRequest {
@@ -269,6 +270,7 @@ export interface GenerateHandoffResponse {
   extracted_tasks_count: number;
   identified_risks_count: number;
   readiness_score: number;
+  provider_mode?: "heuristic" | "gemini" | "heuristic_fallback" | string;
 }
 
 // ==========================================

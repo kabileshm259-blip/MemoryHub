@@ -26,7 +26,7 @@ import {
 } from "@/types/api";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+  (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const TOKEN_STORAGE_KEY = "memoryhub_auth_token";
 
@@ -130,10 +130,20 @@ async function request<T>(
       } else if (Array.isArray(errData.detail) && errData.detail.length > 0) {
         message = errData.detail.map((e) => e.msg).join("; ");
       }
+    } else if (response.status === 400) {
+      message = "Invalid request. Please check your submission.";
+    } else if (response.status === 401) {
+      message = "Invalid email or password.";
     } else if (response.status === 403) {
       message = "You do not have permission to perform this action.";
     } else if (response.status === 404) {
       message = "The requested resource was not found.";
+    } else if (response.status === 409) {
+      message = "An account with this email address already exists.";
+    } else if (response.status === 422) {
+      message = "Validation error. Please verify all required fields.";
+    } else if (response.status === 503) {
+      message = "Database service is temporarily unavailable. Please try again shortly.";
     } else if (response.status >= 500) {
       message = "Server error. Please try again later.";
     }

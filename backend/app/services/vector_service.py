@@ -1,9 +1,12 @@
 import hashlib
+import logging
 import math
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from app.chroma import check_chroma_connection, get_chroma_client
+
+logger = logging.getLogger("memoryhub.vector")
 
 
 class VectorEmbeddingEngine:
@@ -207,6 +210,52 @@ class VectorService:
                 pass
 
     @classmethod
+    def rehydrate_from_db(cls, project_id: Any) -> int:
+        """
+        Rehydrate in-memory vector index from persistent source_records in database.
+        Ensures restart resilience when ChromaDB HTTP service is offline.
+        """
+        from app.database import SessionLocal
+        from app.models import SourceRecord
+        from sqlalchemy import select
+
+        count = 0
+        try:
+            with SessionLocal() as db:
+                records = db.execute(
+                    select(SourceRecord).where(SourceRecord.project_id == project_id)
+                ).scalars().all()
+
+                for record in records:
+                    if not record.content:
+                        continue
+                    text = record.content.strip()
+                    chunks = [text] if len(text) <= 800 else [
+                        text[i : i + 800] for i in range(0, len(text), 650)
+                    ]
+                    for idx, chunk_text in enumerate(chunks):
+                        chunk_id = f"{record.id}_chunk_{idx}"
+                        metadata = {
+                            "source_id": str(record.id),
+                            "project_id": str(project_id),
+                            "title": record.title or "Document",
+                            "source_type": record.source_type,
+                            "provider_type": record.provider_type,
+                            "chunk_index": idx,
+                            "total_chunks": len(chunks),
+                        }
+                        cls.index_chunk(
+                            project_id=project_id,
+                            chunk_id=chunk_id,
+                            document=chunk_text,
+                            metadata=metadata,
+                        )
+                        count += 1
+        except Exception as e:
+            logger.warning(f"Failed to rehydrate vector store from DB: {e}")
+        return count
+
+    @classmethod
     def search_similar(
         cls,
         project_id: Any,
@@ -216,6 +265,11 @@ class VectorService:
     ) -> List[Dict[str, Any]]:
         """Perform semantic similarity search for a user query against project documents."""
         collection_name = cls.get_collection_name(project_id)
+
+        # Check if in-memory store is empty for this project and rehydrate from DB
+        if _in_memory_vector_store.count(collection_name) == 0:
+            cls.rehydrate_from_db(project_id)
+
         query_embedding = VectorEmbeddingEngine.generate_embedding(query)
 
         # First query in-memory store

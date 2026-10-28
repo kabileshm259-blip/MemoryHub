@@ -9,6 +9,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { SourcesIcon } from "@/components/ui/Icons";
+import {
+  WorkflowExecutionDialog,
+  WorkflowStep,
+  WorkflowResultData,
+} from "@/components/ui/WorkflowExecutionDialog";
 
 export default function IntegrationsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -22,6 +27,15 @@ export default function IntegrationsPage() {
   // Syncing state by ID
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
+
+  // Workflow Dialog State
+  const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
+  const [workflowTitle, setWorkflowTitle] = useState("");
+  const [workflowDescription, setWorkflowDescription] = useState("");
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [workflowComplete, setWorkflowComplete] = useState(false);
+  const [workflowSuccess, setWorkflowSuccess] = useState(false);
+  const [workflowResult, setWorkflowResult] = useState<WorkflowResultData | null>(null);
 
   const fetchIntegrations = useCallback((projectId: string) => {
     api
@@ -61,15 +75,104 @@ export default function IntegrationsPage() {
     if (!selectedProjectId) return;
     setSyncingId(integrationId);
     setSyncFeedback(null);
+
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "auth",
+        label: `Connecting to ${providerType.toUpperCase()} Gateway`,
+        description: "Checking connector status and authorization credentials",
+        status: "running",
+      },
+      {
+        id: "fetch",
+        label: "Extracting Operational Records",
+        description: "Querying tickets, threads, or documentation updates",
+        status: "pending",
+      },
+      {
+        id: "index",
+        label: "Semantic Indexing into Vector Store",
+        description: "Generating vector embeddings and updating RAG index",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle(`${providerType.toUpperCase()} Synchronization`);
+    setWorkflowDescription(`Synchronizing knowledge records from ${providerType.toUpperCase()} connector`);
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 200));
+
     try {
-      const res = await api.syncIntegration(selectedProjectId, integrationId);
-      setSyncFeedback(
-        `Synchronized ${res.records_synced} records and ${res.relationships_created} relationship links from ${providerType.toUpperCase()} into vector store.`
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "auth"
+            ? { ...s, status: "succeeded" }
+            : s.id === "fetch"
+            ? { ...s, status: "running" }
+            : s
+        )
       );
+
+      const res = await api.syncIntegration(selectedProjectId, integrationId);
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "fetch"
+            ? { ...s, status: "succeeded" }
+            : s.id === "index"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "index" ? { ...s, status: "succeeded" } : s))
+      );
+
       fetchIntegrations(selectedProjectId);
-      setTimeout(() => setSyncFeedback(null), 6000);
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Synchronization Complete",
+        message: `Successfully synchronized ${res.records_synced} records and created ${res.relationships_created} relationship links.`,
+        badge: {
+          label: "Synced",
+          variant: "success",
+        },
+        evidence: [
+          { label: "Provider", value: providerType.toUpperCase() },
+          { label: "Records Synced", value: res.records_synced },
+          { label: "Links Created", value: res.relationships_created },
+          { label: "Connector Mode", value: "Simulated Provider (Demo Mode)" },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Synchronization Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       alert(message || "Sync failed.");
     } finally {
       setSyncingId(null);
@@ -81,15 +184,103 @@ export default function IntegrationsPage() {
     setIsSeedingDemo(true);
     setError(null);
     setSyncFeedback(null);
+
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "scenario",
+        label: "Initializing E-Commerce Scenario Blueprint",
+        description: "Preparing mock Jira tickets, Slack incident threads, and payment runbooks",
+        status: "running",
+      },
+      {
+        id: "ingest",
+        label: "Ingesting Multi-Source Records",
+        description: "Generating 5 canonical engineering records across project components",
+        status: "pending",
+      },
+      {
+        id: "index",
+        label: "Vector Storage Registration",
+        description: "Indexing records into vector storage for grounded RAG synthesis",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle("Synthetic Demonstration Seeder");
+    setWorkflowDescription("Seeding multi-source scenario data for realistic demonstration");
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 200));
+
     try {
-      const res = await api.seedDemoScenario(selectedProjectId);
-      setSyncFeedback(
-        `Successfully seeded ${res.records_ingested} Jira tickets, Slack discussions, and architecture runbooks for '${res.scenario}'!`
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "scenario"
+            ? { ...s, status: "succeeded" }
+            : s.id === "ingest"
+            ? { ...s, status: "running" }
+            : s
+        )
       );
+
+      const res = await api.seedDemoScenario(selectedProjectId);
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "ingest"
+            ? { ...s, status: "succeeded" }
+            : s.id === "index"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 250));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "index" ? { ...s, status: "succeeded" } : s))
+      );
+
       fetchIntegrations(selectedProjectId);
-      setTimeout(() => setSyncFeedback(null), 7000);
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Demo Scenario Seeded",
+        message: `Successfully seeded ${res.records_ingested} records for scenario "${res.scenario}".`,
+        badge: {
+          label: "Seeded",
+          variant: "success",
+        },
+        evidence: [
+          { label: "Scenario", value: res.scenario },
+          { label: "Records Seeded", value: res.records_ingested },
+          { label: "Status", value: "Vector Store Up to Date" },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Demo Seeding Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       setError(message || "Failed to seed demonstration scenario.");
     } finally {
       setIsSeedingDemo(false);
@@ -337,6 +528,19 @@ export default function IntegrationsPage() {
             </div>
           </div>
         </div>
+
+        {/* Workflow Execution Dialog */}
+        <WorkflowExecutionDialog
+          isOpen={isWorkflowOpen}
+          onClose={() => setIsWorkflowOpen(false)}
+          title={workflowTitle}
+          description={workflowDescription}
+          steps={workflowSteps}
+          isComplete={workflowComplete}
+          isSuccess={workflowSuccess}
+          result={workflowResult}
+          onDone={() => setIsWorkflowOpen(false)}
+        />
       </div>
     </ProtectedRoute>
   );

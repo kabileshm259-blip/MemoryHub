@@ -7,6 +7,7 @@ import { useAuth } from "@/context/auth-context";
 import { api } from "@/lib/api";
 import {
   BellIcon,
+  ChatIcon,
   CloseIcon,
   DashboardIcon,
   HandoffsIcon,
@@ -114,6 +115,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       name: "Projects",
       href: "/projects",
       icon: <ProjectsIcon className="w-5 h-5" />,
+    },
+    {
+      name: "AI Knowledge Chat",
+      href: "/chat",
+      icon: <ChatIcon className="w-5 h-5" />,
     },
     {
       name: "Handoffs",

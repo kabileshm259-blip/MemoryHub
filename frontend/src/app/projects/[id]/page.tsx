@@ -47,7 +47,15 @@ function ProjectDetailsContent() {
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
 
   // AI Chatbot state
-  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "ai"; text: string; citations?: CitationItem[]; hasEvidence?: boolean }>>([
+  const [chatMessages, setChatMessages] = useState<
+    Array<{
+      role: "user" | "ai";
+      text: string;
+      citations?: CitationItem[];
+      hasEvidence?: boolean;
+      providerMode?: string;
+    }>
+  >([
     {
       role: "ai",
       text: "Hello! I am your MemoryHub Knowledge Assistant. I answer questions grounded strictly in this project's verified runbooks, Jira issues, and incident postmortems. Ask me anything about system architecture, credentials, or ongoing blockers.",
@@ -620,6 +628,28 @@ function ProjectDetailsContent() {
                                 : "bg-slate-50 text-slate-800 border border-slate-200 rounded-tl-none"
                             }`}
                           >
+                            {msg.role === "ai" && (
+                              <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-slate-200/70 text-[10px]">
+                                <span className="font-semibold text-slate-500">MemoryHub Assistant</span>
+                                {msg.providerMode === "gemini" ? (
+                                  <span className="px-1.5 py-0.5 rounded font-bold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                                    Gemini 2.5 Flash
+                                  </span>
+                                ) : msg.providerMode === "heuristic_fallback" ? (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800 border border-amber-200"
+                                    title="Gemini call timed out or failed; safely fell back to deterministic heuristic"
+                                  >
+                                    Fallback (Heuristic)
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                    Heuristic Mode
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
                             <p className="whitespace-pre-line text-xs">{msg.text}</p>
 
                             {/* Citations block */}
@@ -671,6 +701,7 @@ function ProjectDetailsContent() {
                               text: res.answer,
                               citations: res.citations,
                               hasEvidence: res.has_sufficient_evidence,
+                              providerMode: res.provider_mode || "heuristic",
                             },
                           ]);
                         } catch (err: unknown) {

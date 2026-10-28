@@ -392,6 +392,7 @@ class AskQuestionResponse(BaseModel):
     citations: List[CitationItem]
     confidence: float
     has_sufficient_evidence: bool
+    provider_mode: str = "heuristic"
 
 
 class GenerateHandoffRequest(BaseModel):
@@ -407,6 +408,7 @@ class GenerateHandoffResponse(BaseModel):
     extracted_tasks_count: int
     identified_risks_count: int
     readiness_score: int
+    provider_mode: str = "heuristic"
 
 
 # ==========================================

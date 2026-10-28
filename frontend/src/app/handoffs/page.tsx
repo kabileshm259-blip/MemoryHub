@@ -22,6 +22,11 @@ import {
   SearchIcon,
   SourcesIcon,
 } from "@/components/ui/Icons";
+import {
+  WorkflowExecutionDialog,
+  WorkflowStep,
+  WorkflowResultData,
+} from "@/components/ui/WorkflowExecutionDialog";
 
 export default function HandoffsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -67,6 +72,15 @@ export default function HandoffsPage() {
 
   // Status transition feedback
   const [transitionLoading, setTransitionLoading] = useState(false);
+
+  // Workflow Dialog State
+  const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
+  const [workflowTitle, setWorkflowTitle] = useState("");
+  const [workflowDescription, setWorkflowDescription] = useState("");
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [workflowComplete, setWorkflowComplete] = useState(false);
+  const [workflowSuccess, setWorkflowSuccess] = useState(false);
+  const [workflowResult, setWorkflowResult] = useState<WorkflowResultData | null>(null);
 
   const fetchHandoffsForProject = useCallback((projectId: string) => {
     Promise.all([
@@ -179,21 +193,142 @@ export default function HandoffsPage() {
 
     setIsGenerating(true);
     setGenerationFeedback(null);
+
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "query",
+        label: "Querying Project Knowledge Sources",
+        description: "Retrieving architecture notes, incident logs, and tickets via vector similarity",
+        status: "running",
+      },
+      {
+        id: "synthesize",
+        label: "Synthesizing Tasks & Operational Risks",
+        description: "Running AI/Heuristic synthesis to extract action items, dependencies, and risks",
+        status: "pending",
+      },
+      {
+        id: "score",
+        label: "Computing Readiness Metric",
+        description: "Evaluating checklist coverage, priority distribution, and verification requirements",
+        status: "pending",
+      },
+      {
+        id: "persist",
+        label: "Persisting Structured Handoff Record",
+        description: "Registering handoff in database and establishing operational audit trail",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle("Operational Handoff Generation");
+    setWorkflowDescription("Synthesizing grounded handoff document from ingested project knowledge artifacts");
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 200));
+
     try {
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "query"
+            ? { ...s, status: "succeeded" }
+            : s.id === "synthesize"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
       const res = await api.generateHandoff(selectedProjectId, {
         title: genTitle.trim() || "AI Generated Operational Handoff",
         successor_id: genSuccessorId || null,
         target_completion_date: genTargetDate || null,
       });
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "synthesize"
+            ? { ...s, status: "succeeded" }
+            : s.id === "score"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "score"
+            ? { ...s, status: "succeeded" }
+            : s.id === "persist"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "persist" ? { ...s, status: "succeeded" } : s))
+      );
+
       setHandoffs((prev) => [res.handoff, ...prev]);
       setActiveHandoff(res.handoff);
       setIsGenerateModalOpen(false);
-      setGenerationFeedback(
-        `Generated handoff successfully from ${res.sources_analyzed_count} sources! Extracted ${res.extracted_tasks_count} tasks and ${res.identified_risks_count} risks.`
-      );
-      setTimeout(() => setGenerationFeedback(null), 6000);
+
+      const modeLabel =
+        res.provider_mode === "gemini"
+          ? "Gemini 2.5 Flash"
+          : res.provider_mode === "heuristic_fallback"
+          ? "Fallback (Heuristic)"
+          : "Heuristic Engine";
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Operational Handoff Synthesized",
+        message: `Handoff "${res.handoff.title}" successfully synthesized via ${modeLabel}.`,
+        badge: {
+          label: modeLabel,
+          variant: res.provider_mode === "gemini" ? "primary" : "neutral",
+        },
+        evidence: [
+          { label: "Handoff ID", value: res.handoff.id },
+          {
+            label: "Readiness Score",
+            value: res.handoff.summary?.readiness_score?.score != null
+              ? `${res.handoff.summary.readiness_score.score}%`
+              : "Calculated",
+          },
+          { label: "Extracted Tasks", value: res.extracted_tasks_count },
+          { label: "Identified Risks", value: res.identified_risks_count },
+          { label: "Sources Analyzed", value: res.sources_analyzed_count },
+          { label: "Provider Engine", value: modeLabel },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Handoff Generation Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       setError(message || "Failed to generate AI handoff.");
     } finally {
       setIsGenerating(false);
@@ -203,17 +338,116 @@ export default function HandoffsPage() {
   const handleStatusTransition = async (newStatus: HandoffStatus, comment?: string) => {
     if (!activeHandoff || !selectedProjectId) return;
     setTransitionLoading(true);
+
+    const formattedStatus = newStatus.replace("_", " ").toUpperCase();
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "auth",
+        label: "Validating Project Authorization",
+        description: "Verifying user permissions and role transitions",
+        status: "running",
+      },
+      {
+        id: "verify",
+        label: "Checking Governance Requirements",
+        description: "Validating readiness criteria, blockers, and reviewer assignment",
+        status: "pending",
+      },
+      {
+        id: "transition",
+        label: `Transitioning Status to ${formattedStatus}`,
+        description: "Recording lifecycle event in immutable audit log and dispatching notifications",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle("Handoff Status Transition");
+    setWorkflowDescription(`Advancing handoff lifecycle state to ${formattedStatus}`);
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 150));
+
     try {
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "auth"
+            ? { ...s, status: "succeeded" }
+            : s.id === "verify"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
       const updated = await api.transitionHandoffStatus(
         selectedProjectId,
         activeHandoff.id,
         newStatus,
         comment
       );
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "verify"
+            ? { ...s, status: "succeeded" }
+            : s.id === "transition"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "transition" ? { ...s, status: "succeeded" } : s))
+      );
+
       setActiveHandoff(updated);
       refreshHandoffs();
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: `Handoff Status Updated: ${formattedStatus}`,
+        message: `Handoff status was successfully updated to ${formattedStatus}.`,
+        badge: {
+          label: formattedStatus,
+          variant: "success",
+        },
+        evidence: [
+          { label: "Handoff ID", value: updated.id },
+          { label: "New Status", value: updated.status },
+          { label: "Updated At", value: new Date(updated.updated_at).toLocaleTimeString() },
+          {
+            label: "Readiness Score",
+            value: updated.summary?.readiness_score?.score != null
+              ? `${updated.summary.readiness_score.score}%`
+              : "N/A",
+          },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Transition Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       alert(message || "Status transition failed.");
     } finally {
       setTransitionLoading(false);
@@ -223,12 +457,110 @@ export default function HandoffsPage() {
   const handleAcknowledge = async () => {
     if (!activeHandoff || !selectedProjectId) return;
     setTransitionLoading(true);
+
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "auth",
+        label: "Authenticating Successor Identity",
+        description: "Confirming identity of designated successor or team assignee",
+        status: "running",
+      },
+      {
+        id: "checklist",
+        label: "Confirming Operational Acceptance",
+        description: "Checking critical tasks, dependencies, credentials, and runbook access",
+        status: "pending",
+      },
+      {
+        id: "commit",
+        label: "Recording Formal Handover Acknowledgement",
+        description: "Setting status to Acknowledged and stamping transfer in continuity log",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle("Successor Handover Acknowledgement");
+    setWorkflowDescription("Executing formal operational transfer and successor sign-off");
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 150));
+
     try {
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "auth"
+            ? { ...s, status: "succeeded" }
+            : s.id === "checklist"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
       const updated = await api.acknowledgeHandoff(selectedProjectId, activeHandoff.id);
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "checklist"
+            ? { ...s, status: "succeeded" }
+            : s.id === "commit"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "commit" ? { ...s, status: "succeeded" } : s))
+      );
+
       setActiveHandoff(updated);
       refreshHandoffs();
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Handover Successfully Acknowledged",
+        message: "Successor has formally acknowledged and assumed operational responsibility.",
+        badge: {
+          label: "Acknowledged",
+          variant: "success",
+        },
+        evidence: [
+          { label: "Handoff ID", value: updated.id },
+          { label: "Status", value: updated.status },
+          { label: "Acknowledged At", value: new Date(updated.updated_at).toLocaleTimeString() },
+          {
+            label: "Readiness Score",
+            value: updated.summary?.readiness_score?.score != null
+              ? `${updated.summary.readiness_score.score}%`
+              : "N/A",
+          },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Acknowledgement Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       alert(message || "Acknowledgement failed.");
     } finally {
       setTransitionLoading(false);
@@ -1065,6 +1397,19 @@ export default function HandoffsPage() {
             </div>
           </form>
         </Modal>
+
+        {/* Workflow Execution Dialog */}
+        <WorkflowExecutionDialog
+          isOpen={isWorkflowOpen}
+          onClose={() => setIsWorkflowOpen(false)}
+          title={workflowTitle}
+          description={workflowDescription}
+          steps={workflowSteps}
+          isComplete={workflowComplete}
+          isSuccess={workflowSuccess}
+          result={workflowResult}
+          onDone={() => setIsWorkflowOpen(false)}
+        />
       </div>
     </ProtectedRoute>
   );

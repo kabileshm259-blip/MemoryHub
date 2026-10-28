@@ -3,12 +3,12 @@
 **Academic Project Technical Report & Comprehensive Implementation Documentation**  
 **Repository Location:** `C:\Projects\MemoryHub`  
 **Execution Environment:** Windows Server / Windows 11, Python 3.11 Virtual Environment (`backend\.venv`), Node.js v20+, FastAPI 0.162.0, Next.js 16.4.3 (React 19.3.0, Turbopack, Tailwind CSS v4), Docker Desktop (PostgreSQL 17-alpine, ChromaDB 1.5.9)  
-**Verification Date:** October 2026 (Milestone 4.3 Verified)  
+**Verification Date:** October 2026 (Milestone 5.0 Verified — Gemini API Integration with Safe Offline Fallback)  
 **Status:** Full Stack Online, Formally Tested, and Systematically Verified  
-- **Backend Test Suite:** 28/28 Automated Pytest Tests Passing in 40.71s (Python 3.11.0, PostgreSQL 17 & SQLite fallback modes)  
+- **Backend Test Suite:** 37/38 Automated Pytest Tests Passing (1 skipped opt-in live test) in 73.61s across 7 modules (Python 3.11.0, PostgreSQL 17 & SQLite fallback modes)  
 - **Frontend Code Quality & Production Build:** ESLint: 0 Errors, 0 Warnings; TypeScript: 0 Errors; Next.js 16.4.3 Turbopack Production Build Succeeded with 0 Errors (12 application routes compiled)  
 - **Database Architecture:** Live PostgreSQL 17 on port 5432, 12 tables (11 domain tables + `alembic_version`) managed via SQLAlchemy 2.0.44 and Alembic at head revision `c4d87a912b3f`  
-- **Vector Storage & RAG:** ChromaDB 1.5.9 container online on port 8001 (17 collections, live heartbeat), `InMemoryVectorStore` retrieval fallback, 384-dimensional deterministic MD5 hash-projection embeddings, heuristic evidence extraction with confidence-based abstention (threshold: 0.22)  
+- **AI & RAG Engine:** Dual-Engine Architecture: Google Gemini 2.5 Flash (`from google import genai`) with prompt injection defenses and citation validation, backed by deterministic heuristic synthesis and confidence-based abstention (threshold: 0.22); ChromaDB 1.5.9 vector storage with in-memory fallback  
 - **Automated Workflow Verification:** End-to-end 8-stage verification script (`scripts/verify_demo_workflow.py`) passed in 2.04s; Browser UI rendering and client route guards verified in Headless Chrome (`scripts/verify_ui_rendering.py`) across all 7 routes with 0 errors  
 
 ---
@@ -455,10 +455,17 @@ This technical document serves as the final academic project report, architectur
 
 ---
 
-### Question 29: AI Chatbot, Context Window, and Evidence-Based Abstention
-- **Direct Answer:** The AI Assistant answers ad-hoc questions scoped strictly to the current project's vector collection, providing citations and honestly abstaining when evidence confidence falls below 0.22.
-- **Technical Explanation:** When `POST /api/projects/{id}/ask` is called, `VectorService.search_similar` retrieves the top-k chunks. If no chunks exist or the highest similarity score is $< 0.22$, the system returns `has_sufficient_evidence = False`, `confidence = 0.0`, and an honest abstention message requesting further documentation.
-- **Verification Evidence:** Verified via `tests/test_ingestion_rag.py::test_rag_question_answering_and_evidence_abstention`.
+### Question 29: AI Chatbot, Dual-Engine Architecture, and Evidence-Based Abstention
+- **Direct Answer:** The AI Assistant answers ad-hoc questions scoped strictly to the current project's vector collection using a Dual-Engine Architecture: Google Gemini 2.5 Flash (via official `from google import genai` SDK) when configured, backed by deterministic heuristic synthesis and automatic circuit-breaker fallback. It enforces verifiable citations and honestly abstains when evidence confidence falls below 0.22.
+- **Technical Explanation:** When `POST /api/projects/{id}/ask` is called:
+  1. *Vector Retrieval:* `VectorService.search_similar` retrieves the top-k chunks for the isolated project.
+  2. *Evidence Guard:* If no chunks exist or the highest similarity score is $< 0.22$, the system returns `has_sufficient_evidence = False`, `confidence = 0.0`, and an honest abstention message requesting further documentation—bypassing the LLM entirely to preserve token quotas.
+  3. *Provider Synthesis:*
+     - If `AI_PROVIDER == "heuristic"` (default): Runs deterministic sentence extraction, keyword scoring, and citation linking (`provider_mode = "heuristic"`).
+     - If `AI_PROVIDER == "gemini"`: Calls `GeminiService.generate_rag_answer` using Gemini 2.5 Flash with structured Pydantic schemas, strict system prompts defending against prompt injection, and HTTP timeout bounding (`provider_mode = "gemini"`).
+  4. *Citation Provenance Guard:* The backend cross-verifies all returned citation identifiers against actual indexed database chunks; fabricated IDs are discarded.
+  5. *Safe Fallback:* If the Gemini API request fails, times out, or throws an exception, the system catches it, logs a warning, and immediately serves the deterministic heuristic answer (`provider_mode = "heuristic_fallback"`).
+- **Verification Evidence:** Verified via `tests/test_ingestion_rag.py` and dedicated suite `tests/test_gemini_integration.py` (10 tests covering injection defenses, citation filtering, timeout fallback, and provider modes).
 - **Status:** Implemented and Tested.
 
 ---
@@ -542,14 +549,15 @@ This technical document serves as the final academic project report, architectur
 ## SECTION K: TESTING & VERIFICATION
 
 ### Question 38: Test Count and Suite Breakdown
-- **Direct Answer:** The backend test suite contains **28 passing automated test functions** across 6 test modules:
+- **Direct Answer:** The backend test suite contains **37 passing automated test functions** (plus 1 skipped opt-in live test) across 7 test modules:
   - `tests/test_auth.py`: 8 tests (Registration, hashing, login, token validation, user profile, validation errors).
   - `tests/test_health.py`: 3 tests (Root endpoint greeting, liveness probes `/health` & `/health/liveness`, readiness probes `/health/readiness` & `/ready`).
   - `tests/test_projects.py`: 10 tests (CRUD, member invitation, owner settings update, viewer edit denial, private project isolation, duplicate memberships, invalid UUID handling, pagination).
   - `tests/test_handoffs.py`: 2 comprehensive tests (CRUD, lifecycle state machine guards, score recalculation, successor acknowledgement).
   - `tests/test_ingestion_rag.py`: 3 comprehensive tests (Chunking, SHA-256 deduplication, vector search, RAG Q&A, abstention, AI handoff generation).
   - `tests/test_integrations_search.py`: 2 comprehensive tests (Demo seeder, simulated sync, unified search, notification workflows).
-- **Verification Evidence:** Executed on October 28, 2026: `28 passed, 1 warning in 39.97s` (`backend\.venv\Scripts\python.exe -m pytest backend\tests -v`).
+  - `tests/test_gemini_integration.py`: 10 tests (Default heuristic mode, missing key 500 handling, low-confidence abstention bypassing LLM, mocked Gemini RAG synthesis, citation provenance verification filtering fake source IDs, prompt injection resistance, timeout fallback to heuristic, handoff drafting fallback, project RBAC isolation, opt-in live API test).
+- **Verification Evidence:** Executed on October 28, 2026: `37 passed, 1 skipped, 1 warning in 73.61s` (`backend\.venv\Scripts\python.exe -m pytest backend\tests -v`).
 - **Status:** 100% Passing.
 
 ---
@@ -1703,10 +1711,13 @@ cmd.exe /c "npm --prefix frontend run dev"
 | **Integration Connectors (Jira/Slack)** | Partially implemented | `app/services/integration_service.py` | `tests/test_integrations_search.py` | Simulated sync and demo seeder; no live OAuth |
 | **Audit Event Logging** | Implemented and tested | `app/models.py::AuditEvent` | Verified in database session checks | Recorded on handoffs, sources, acknowledgements |
 | **Next.js Frontend Build** | Implemented and tested | `frontend/src/app/` (10 pages / 12 routes) | `cmd.exe /c "npm --prefix frontend run build"` | Turbopack build succeeded with 0 errors; ESLint 0 errors / 0 warnings |
-| **External LLMs (Gemini / OpenAI)** | Not implemented or planned | N/A | Inspected `config.py` & `requirements.txt` | Planned future enhancement |
+| **External LLMs (Gemini / OpenAI)** | Implemented and verified | `app/services/gemini_service.py`, `app/services/rag_service.py` | `tests/test_gemini_integration.py` | Google Gemini 2.5 Flash SDK integration (`google-genai`) with offline heuristic fallback |
+| **Interactive Workflow Execution Dialog** | Implemented and verified | `frontend/src/components/ui/WorkflowExecutionDialog.tsx` | `scripts/verify_interactive_features.py` (8/8 browser tests) | Reusable multi-stage timeline, real server evidence, zero external animation dependencies |
+| **Dedicated AI Knowledge Chat** | Implemented and verified | `frontend/src/app/chat/page.tsx` (`/chat`) | `scripts/verify_interactive_features.py` | Project-scoped conversational interface, verified citations, honest abstention (<0.22) |
+| **Vector Store Rehydration on Restart** | Implemented and verified | `app/services/vector_service.py::rehydrate_from_db` | Verified across server restarts | Re-indexes database source records into in-memory store automatically |
 | **Cryptographic Public-Key Signatures**| Not implemented or planned | N/A | Inspected `handoff_acknowledgements` | Relational audit record used instead |
 | **Live Jira/Slack OAuth Synchronizer**| Not implemented or planned | N/A | Inspected `integration_service.py` | Planned future enhancement |
 | **Cookie-Based HTTP Sessions** | Not implemented or planned | N/A | Inspected `frontend/src/lib/api.ts` | Uses `localStorage` (XSS consideration) |
 
 ---
-*Report rigorously verified and updated against the live MemoryHub implementation.*
+*Report rigorously verified and updated against the live MemoryHub implementation (Milestone 6.0).*

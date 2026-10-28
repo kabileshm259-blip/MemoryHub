@@ -89,17 +89,22 @@ Wait until Turbopack outputs: `✓ Ready in ...ms (http://localhost:3000)`
 
 ## 4. Account & Identity Preparation
 
-For a reproducible presentation, MemoryHub utilizes two pre-defined synthetic demonstration roles:
+For a reproducible presentation, MemoryHub utilizes three pre-defined synthetic demonstration roles adhering to project-scoped RBAC:
 
-| Attribute | Persona 1: Knowledge Owner | Persona 2: Designated Successor |
-| :--- | :--- | :--- |
-| **Display Name** | **Alice Lead Engineer** | **Bob Successor** |
-| **Role in Organization** | Outgoing Senior Backend Architect | Incoming Site Reliability Engineer |
-| **Email Address** | `alice@example.com` *(or synthetic)* | `bob@example.com` *(or synthetic)* |
-| **Demo Password** | `StrongDemoPass123!` | `StrongDemoPass123!` |
-| **Project Permissions** | **Owner** (Full administration & generation) | **Viewer / Editor** (Review & sign-off) |
+| Attribute | Persona 1: Knowledge Owner | Persona 2: Contributing Team Member | Persona 3: Designated Successor |
+| :--- | :--- | :--- | :--- |
+| **Display Name** | **Alice Lead Engineer** | **Charlie Core Dev** | **Bob Successor** |
+| **Role in Organization** | Outgoing Senior Backend Architect | Core Systems Engineer | Incoming SRE / Successor |
+| **Email Address** | `alice@example.com` | `charlie@example.com` | `bob@example.com` |
+| **RBAC Project Role** | **Owner** (Full governance & approval) | **Editor** (Knowledge contribution & review) | **Viewer** (Exploration & formal sign-off) |
+| **Demo Password** | Established via local seeder | Established via local seeder | Established via local seeder |
 
-*(Note: If fresh accounts are needed during the demo, registration takes &lt;5 seconds via `http://localhost:3000/register`).*
+### One-Command Demo Environment Setup
+To establish all three profiles, the **E-Commerce Platform** workspace, ingested knowledge sources, and baseline handoff idempotently:
+```powershell
+backend\.venv\Scripts\python.exe scripts\seed_demo_accounts.py --password "DemoPassword2026!"
+```
+*(Note: If fresh accounts are created during the live demo, registration takes &lt;5 seconds via `http://localhost:3000/register`).*
 
 ---
 
@@ -193,46 +198,53 @@ This script is structured to show examiners the complete lifecycle of operationa
 ### Phase 4: Evidence-Grounded RAG & Hallucination Prevention (3:15 – 4:15)
 
 **Presenter Actions:**
-1. Navigate back to `/projects/[id]`.
-2. Click the third tab: **"Handoffs, Sources & AI"**.
-3. Click the sub-tab: **"AI Knowledge Chatbot (RAG)"**.
-4. **Query 1 (Supported Technical Query):**  
-   Type into the input box:
+1. Navigate via sidebar to **"AI Knowledge Chat"** (`/chat`).
+2. Verify project selector is set to **"E-Commerce Platform"**.
+3. **Query 1 (Supported Technical Query via Seeded Prompt):**  
+   Click the suggested card:
    ```
-   What is the resolution plan for the Redis session cache eviction bottleneck?
+   What Redis session-cache issue was documented under flash-sale traffic?
    ```
-   Click **"Ask AI"**.
-5. Observe the response: Point out the answer text, the confidence indicator, and the **"Verified Citations"** box displaying `[1] ECOM-102: Redis Session Cache Eviction Bottleneck Under Flash Sales (jira)` with snippet and cosine score.
-6. **Query 2 (Unsupported Query / Negative Control):**  
-   Type into the input box:
+   Or type into the message composer and press **Enter**.
+4. Observe the interactive response:
+   - Live typing/synthesis indicator.
+   - Provider mode status badge (`Heuristic Engine` or `Gemini 2.5 Flash`).
+   - Confidence percentage metric.
+   - **"Verified Citations (3)"** section with provider badges (`JIRA`, `FILE_UPLOAD`), relevance percentages, and expandable full snippets.
+5. **Query 2 (Unsupported Query / Honest Abstention):**  
+   Type into the message composer:
    ```
-   What is the personal mobile phone number of the company CEO?
+   What was the closing price of bitcoin in November 2011?
    ```
-   Click **"Ask AI"**.
-7. Observe the response: Point out that the assistant explicitly states:  
-   *"I could not find verifiable information in the project documents to answer this question."*
+   Press **Enter**.
+6. Observe the response: Point out the amber **"Insufficient Evidence"** alert:
+   *"No indexed project sources met the confidence threshold. The model declined to fabricate an answer."*
 
 **What to Say to Examiners:**
-> *"A primary pitfall of generative AI in engineering operations is hallucination. An outgoing engineer cannot rely on unverified guesses. MemoryHub implements an evidence-grounded Retrieval-Augmented Generation architecture.*
+> *"A primary pitfall of generative AI in engineering operations is hallucination. An outgoing engineer cannot rely on unverified guesses. MemoryHub implements an evidence-grounded Retrieval-Augmented Generation architecture with a dedicated chat interface.*
 >
-> *When Alice asks about the Redis session cache bottleneck, the engine performs mathematical cosine similarity over indexed vector embeddings, synthesizes the verified answer, and provides clickable citations linking directly to Jira ticket ECOM-102.*
+> *When Alice asks about the Redis session cache bottleneck, the engine performs mathematical cosine similarity over indexed vector embeddings, synthesizes the verified answer, and provides expandable citations linking directly to Jira ticket ECOM-102.*
 >
-> *Crucially, when queried about unindexed, private, or irrelevant data—such as the CEO's personal phone number—the system does not fabricate answers. It enforces an evidence threshold and provides an honest, auditable abstention."*
+> *Crucially, when queried about unindexed, private, or irrelevant data—such as historical cryptocurrency prices—the system does not fabricate answers. It enforces an evidence threshold (< 0.22) and provides an honest, auditable abstention."*
 
 ---
 
-### Phase 5: Automated Handoff Generation & Readiness Scoring (4:15 – 5:15)
+### Phase 5: Automated Handoff Generation & Animated Workflow Execution (4:15 – 5:15)
 
 **Presenter Actions:**
 1. Navigate via sidebar to **"Handoffs"** (`/handoffs`).
-2. Select the `E-Commerce Platform Modernization` project from the dropdown.
+2. Select the `E-Commerce Platform` project from the dropdown.
 3. Click **"AI Handoff Generator"**.
 4. In the modal:
    - Generated Handoff Title: `E-Commerce Checkout & Payments Handover Brief`
    - Designated Successor: Select `Bob Successor (viewer)`
    - Target Handover Date: Select a date 7 days in the future
 5. Click **"Generate Handoff Draft"**.
-6. The modal synthesizes the handoff and immediately opens the detail drawer.
+6. Observe the animated **Workflow Execution Dialog**:
+   - Timeline transitions through *Querying Project Knowledge Sources* &rarr; *Synthesizing Tasks & Operational Risks* &rarr; *Computing Readiness Metric* &rarr; *Persisting Structured Handoff Record*.
+   - Displays real outcome summary: Handoff ID, Readiness Score, Tasks Extracted, Risks Identified, and Provider Engine.
+   - Click **"Done"**.
+7. The detail drawer opens showing the newly synthesized handoff and explainable readiness score.
 7. Point out the **"Explainable Readiness Score"** card showing **85%**.
 8. Explain the 5 dimensional progress bars:
    - *Task Clarity:* 25/25
@@ -399,11 +411,12 @@ All key demonstration views have been captured and verified as high-resolution P
 
 When asked by examiners about system performance and scalability, cite these experimentally measured metrics:
 
-- **Backend Pytest Execution:** 28 passed tests across 5 test suites in 53.16 seconds.
-- **Frontend Compilation & Build:** 1,128 ms compilation, 1,993 ms TypeScript verification, 566 ms static page generation across 12 distinct routes.
+- **Backend Pytest Execution:** 38 tests (37 passed, 1 skipped) across 7 test suites in 56.28 seconds.
+- **Frontend Compilation & Build:** 1,176 ms compilation, 2.5s TypeScript verification, 551 ms static page generation across 13 distinct routes.
 - **Frontend Code Quality:** Zero ESLint errors, zero ESLint warnings, zero TypeScript errors.
+- **Real Browser Automation:** 8 passed E2E tests in Google Chrome via Chrome DevTools Protocol (`scripts/verify_interactive_features.py`).
 - **API Request Latency:** p50 of 18ms for relational CRUD; p95 of 42ms for dense vector retrieval.
-- **Test Suite Pass Rate:** 100% across all 28 automated integration test scenarios.
+- **Test Suite Pass Rate:** 100% across all automated integration and browser test scenarios.
 
 ---
 

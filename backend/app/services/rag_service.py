@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -5,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.config import settings
 from app.models import AuditEvent, Handoff, ProjectMembership, SourceRecord, User
 from app.schemas import (
     AskQuestionRequest,
@@ -18,8 +20,11 @@ from app.schemas import (
     HandoffRiskItem,
     HandoffTaskItem,
 )
+from app.services.gemini_service import GeminiService
 from app.services.handoff_service import HandoffService, ReadinessScoringEngine
 from app.services.vector_service import VectorService
+
+logger = logging.getLogger("memoryhub.rag")
 
 
 class RAGService:
@@ -79,6 +84,7 @@ class RAGService:
         # Check if chunks provide sufficient evidence
         highest_score = max([c.get("score", 0.0) for c in chunks], default=0.0)
 
+        # Enforce strict honest abstention before any LLM provider invocation
         if not chunks or highest_score < cls.MINIMUM_CONFIDENCE_THRESHOLD:
             return AskQuestionResponse(
                 question=data.question,
@@ -90,34 +96,68 @@ class RAGService:
                 citations=[],
                 confidence=0.0,
                 has_sufficient_evidence=False,
+                provider_mode="heuristic",
             )
 
-        # Construct evidence-grounded synthesis
-        answer_parts = []
-        answer_parts.append(f"Based on the {len(chunks)} verified source records retrieved from project memory:")
+        provider_mode = "heuristic"
+        full_answer: Optional[str] = None
+        final_citations = citations
 
-        for i, c in enumerate(chunks, 1):
-            title = c.get("metadata", {}).get("title", "Documentation")
-            provider = c.get("metadata", {}).get("provider_type", "source")
-            content_snippet = c.get("document", "").strip()
-            # Extract key informative sentence
-            sentences = [s.strip() for s in content_snippet.split(". ") if len(s.strip()) > 10]
-            summary_point = sentences[0] if sentences else content_snippet[:150]
-            answer_parts.append(f"• [{title} ({provider.title()})]: {summary_point}.")
+        # If Gemini provider mode is explicitly enabled, invoke Gemini with strict grounding
+        if settings.is_gemini_enabled():
+            if not settings.GEMINI_API_KEY:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=(
+                        "AI_PROVIDER is set to 'gemini' but GEMINI_API_KEY is not configured. "
+                        "Please configure GEMINI_API_KEY in .env or switch AI_PROVIDER=heuristic."
+                    ),
+                )
+            try:
+                gemini_answer, cited_ids = GeminiService.generate_grounded_answer(
+                    question=data.question,
+                    retrieved_chunks=chunks,
+                )
+                full_answer = gemini_answer
+                provider_mode = "gemini"
+                # Filter citations to those validated as contributing to the answer
+                if cited_ids:
+                    matched = [c for c in citations if c.source_id in cited_ids]
+                    if matched:
+                        final_citations = matched
+            except Exception as e:
+                logger.warning("Gemini generation failed, falling back to heuristic: %s", str(e))
+                provider_mode = "heuristic_fallback"
+                full_answer = None
 
-        answer_parts.append(
-            "\nKey Takeaway: The documented systems and operational records confirm the context cited above. "
-            "Please refer to the source citations below for full details."
-        )
+        # Deterministic heuristic fallback or default mode
+        if full_answer is None:
+            answer_parts = []
+            answer_parts.append(f"Based on the {len(chunks)} verified source records retrieved from project memory:")
 
-        full_answer = "\n".join(answer_parts)
+            for i, c in enumerate(chunks, 1):
+                title = c.get("metadata", {}).get("title", "Documentation")
+                provider = c.get("metadata", {}).get("provider_type", "source")
+                content_snippet = c.get("document", "").strip()
+                # Extract key informative sentence
+                sentences = [s.strip() for s in content_snippet.split(". ") if len(s.strip()) > 10]
+                summary_point = sentences[0] if sentences else content_snippet[:150]
+                answer_parts.append(f"• [{title} ({provider.title()})]: {summary_point}.")
+
+            answer_parts.append(
+                "\nKey Takeaway: The documented systems and operational records confirm the context cited above. "
+                "Please refer to the source citations below for full details."
+            )
+
+            full_answer = "\n".join(answer_parts)
 
         return AskQuestionResponse(
             question=data.question,
             answer=full_answer,
-            citations=citations,
+            citations=final_citations,
             confidence=round(highest_score, 2),
             has_sufficient_evidence=True,
+            provider_mode=provider_mode,
         )
 
     @classmethod
@@ -328,6 +368,79 @@ class RAGService:
             f"{len(extracted_risks)} operational risks requiring ongoing successor attention."
         )
 
+        key_responsibilities = [
+            "Primary ownership of microservice codebase and bug triage",
+            "Monitoring production error rates on Sentry and Grafana",
+            "Reviewing weekly deployment runbooks and credential rotations",
+        ]
+
+        provider_mode = "heuristic"
+
+        # If Gemini provider mode is explicitly enabled, invoke Gemini to enrich the draft
+        if settings.is_gemini_enabled():
+            if not settings.GEMINI_API_KEY:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=(
+                        "AI_PROVIDER is set to 'gemini' but GEMINI_API_KEY is not configured. "
+                        "Please configure GEMINI_API_KEY in .env or switch AI_PROVIDER=heuristic."
+                    ),
+                )
+            try:
+                gemini_draft = GeminiService.generate_handoff_draft(
+                    sources=sources,
+                    focus_areas=data.focus_areas,
+                    target_date=data.target_completion_date,
+                )
+                if gemini_draft.executive_summary:
+                    executive_summary = gemini_draft.executive_summary
+                if gemini_draft.key_responsibilities:
+                    key_responsibilities = gemini_draft.key_responsibilities
+                if gemini_draft.tasks:
+                    extracted_tasks = [
+                        HandoffTaskItem(
+                            id=f"task_{uuid.uuid4().hex[:8]}",
+                            title=t.title,
+                            description=t.description,
+                            status=t.status if t.status in ("todo", "in_progress", "blocked", "completed") else "todo",
+                            priority=t.priority if t.priority in ("low", "medium", "high", "critical") else "high",
+                            deadline=t.deadline or data.target_completion_date or "Next Sprint",
+                            blockers=t.blockers,
+                            assignee=current_user.display_name,
+                            source_reference_id=t.source_reference_id,
+                        )
+                        for t in gemini_draft.tasks
+                    ]
+                if gemini_draft.dependencies:
+                    extracted_deps = [
+                        HandoffDependencyItem(
+                            id=f"dep_{uuid.uuid4().hex[:8]}",
+                            name=d.name,
+                            type=d.type if d.type in ("service", "api", "database", "infrastructure", "team", "vendor") else "service",
+                            description=d.description,
+                            criticality=d.criticality if d.criticality in ("low", "medium", "high", "critical") else "high",
+                            contact_or_link=d.contact_or_link or "Internal Documentation",
+                        )
+                        for d in gemini_draft.dependencies
+                    ]
+                if gemini_draft.risks:
+                    extracted_risks = [
+                        HandoffRiskItem(
+                            id=f"risk_{uuid.uuid4().hex[:8]}",
+                            category=r.category if r.category in ("technical", "operational", "security", "knowledge", "timeline") else "technical",
+                            title=r.title,
+                            severity=r.severity if r.severity in ("low", "medium", "high", "critical") else "high",
+                            impact=r.impact,
+                            mitigation=r.mitigation,
+                            status=r.status if r.status in ("identified", "mitigated", "accepted") else "identified",
+                        )
+                        for r in gemini_draft.risks
+                    ]
+                provider_mode = "gemini"
+            except Exception as e:
+                logger.warning("Gemini handoff drafting failed, falling back to heuristic: %s", str(e))
+                provider_mode = "heuristic_fallback"
+
         successor_user = None
         if data.successor_id:
             successor_user = db.execute(
@@ -341,16 +454,13 @@ class RAGService:
             "successor_id": str(data.successor_id) if data.successor_id else None,
             "successor_name": successor_user.display_name if successor_user else None,
             "target_completion_date": data.target_completion_date,
-            "key_responsibilities": [
-                "Primary ownership of microservice codebase and bug triage",
-                "Monitoring production error rates on Sentry and Grafana",
-                "Reviewing weekly deployment runbooks and credential rotations",
-            ],
+            "key_responsibilities": key_responsibilities,
             "tasks": [t.model_dump() for t in extracted_tasks],
             "dependencies": [d.model_dump() for d in extracted_deps],
             "risks": [r.model_dump() for r in extracted_risks],
             "resources": [res.model_dump() for res in extracted_resources],
             "citations": [c.model_dump() for c in citations[:6]],
+            "provider_mode": provider_mode,
         }
 
         # Calculate explainable readiness score
@@ -376,4 +486,5 @@ class RAGService:
             extracted_tasks_count=len(extracted_tasks),
             identified_risks_count=len(extracted_risks),
             readiness_score=score_data.score,
+            provider_mode=provider_mode,
         )

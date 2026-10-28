@@ -13,6 +13,11 @@ import {
   SearchIcon,
   SourcesIcon,
 } from "@/components/ui/Icons";
+import {
+  WorkflowExecutionDialog,
+  WorkflowStep,
+  WorkflowResultData,
+} from "@/components/ui/WorkflowExecutionDialog";
 
 export default function SourcesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -37,6 +42,15 @@ export default function SourcesPage() {
 
   // Demo seeder state
   const [isSeeding, setIsSeeding] = useState(false);
+
+  // Workflow Dialog State
+  const [isWorkflowOpen, setIsWorkflowOpen] = useState(false);
+  const [workflowTitle, setWorkflowTitle] = useState("");
+  const [workflowDescription, setWorkflowDescription] = useState("");
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [workflowComplete, setWorkflowComplete] = useState(false);
+  const [workflowSuccess, setWorkflowSuccess] = useState(false);
+  const [workflowResult, setWorkflowResult] = useState<WorkflowResultData | null>(null);
 
   const fetchSources = useCallback((projectId: string) => {
     api
@@ -79,21 +93,130 @@ export default function SourcesPage() {
     if (!selectedProjectId || !newTitle.trim() || !newContent.trim()) return;
 
     setIsIngesting(true);
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "validate",
+        label: "Validating Document Payload",
+        description: `Checking content integrity, title format, and "${newSourceType}" schema`,
+        status: "running",
+      },
+      {
+        id: "chunk",
+        label: "Extracting Content & Chunking",
+        description: "Partitioning document text into semantic chunks for vector indexing",
+        status: "pending",
+      },
+      {
+        id: "vectorize",
+        label: "Vector Embedding & Retrieval Indexing",
+        description: "Generating embeddings and registering in vector storage (Chroma / In-Memory)",
+        status: "pending",
+      },
+      {
+        id: "persist",
+        label: "Persisting Knowledge Record",
+        description: "Storing metadata and relational references in project knowledge graph",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle("Knowledge Source Ingestion");
+    setWorkflowDescription("Executing ingestion pipeline: validation, semantic chunking, and vector indexing");
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 200));
+
     try {
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "validate"
+            ? { ...s, status: "succeeded" }
+            : s.id === "chunk"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "chunk"
+            ? { ...s, status: "succeeded" }
+            : s.id === "vectorize"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
       const created = await api.ingestSource(selectedProjectId, {
         title: newTitle.trim(),
         content: newContent.trim(),
         source_type: newSourceType,
         provider_type: newProviderType,
       });
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "vectorize"
+            ? { ...s, status: "succeeded" }
+            : s.id === "persist"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 150));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "persist" ? { ...s, status: "succeeded" } : s))
+      );
+
       setSources((prev) => [created, ...prev]);
       setIsIngestModalOpen(false);
       setNewTitle("");
       setNewContent("");
-      setSuccessMessage(`Document '${created.title}' ingested and indexed into vector memory.`);
-      setTimeout(() => setSuccessMessage(null), 5000);
+      setSuccessMessage(`Document "${created.title}" ingested and indexed.`);
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Source Ingested & Vector Indexed",
+        message: `Knowledge source "${created.title}" successfully ingested and indexed into semantic search.`,
+        badge: {
+          label: "Indexed",
+          variant: "success",
+        },
+        evidence: [
+          { label: "Source ID", value: created.id },
+          { label: "Document Title", value: created.title },
+          { label: "Source Type", value: created.source_type },
+          { label: "Provider Type", value: created.provider_type },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Source Ingestion Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       setError(message || "Failed to ingest source document.");
     } finally {
       setIsIngesting(false);
@@ -104,15 +227,104 @@ export default function SourcesPage() {
     if (!selectedProjectId) return;
     setIsSeeding(true);
     setError(null);
+
+    const initialSteps: WorkflowStep[] = [
+      {
+        id: "scenario",
+        label: "Initializing E-Commerce Demo Blueprint",
+        description: "Preparing synthetic tickets, incident threads, and architecture runbooks",
+        status: "running",
+      },
+      {
+        id: "ingest",
+        label: "Ingesting Cross-Source Knowledge Items",
+        description: "Populating Jira tickets (ECOM-101/102/103), Slack chat, and payment runbook",
+        status: "pending",
+      },
+      {
+        id: "index",
+        label: "Building Semantic Vector Embeddings",
+        description: "Indexing 5 operational artifacts into retrieval memory for RAG questions",
+        status: "pending",
+      },
+    ];
+
+    setWorkflowTitle("Synthetic Scenario Ingestion");
+    setWorkflowDescription("Seeding multi-source enterprise dataset for realistic handoff and RAG demonstration");
+    setWorkflowSteps(initialSteps);
+    setWorkflowComplete(false);
+    setWorkflowSuccess(false);
+    setWorkflowResult(null);
+    setIsWorkflowOpen(true);
+
+    await new Promise((r) => setTimeout(r, 200));
+
     try {
-      const res = await api.seedDemoScenario(selectedProjectId);
-      setSuccessMessage(
-        `Seeded ${res.records_ingested} demonstration sources for '${res.scenario}'! Generated ChromaDB vector embeddings.`
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "scenario"
+            ? { ...s, status: "succeeded" }
+            : s.id === "ingest"
+            ? { ...s, status: "running" }
+            : s
+        )
       );
+
+      const res = await api.seedDemoScenario(selectedProjectId);
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === "ingest"
+            ? { ...s, status: "succeeded" }
+            : s.id === "index"
+            ? { ...s, status: "running" }
+            : s
+        )
+      );
+
+      await new Promise((r) => setTimeout(r, 250));
+
+      setWorkflowSteps((prev) =>
+        prev.map((s) => (s.id === "index" ? { ...s, status: "succeeded" } : s))
+      );
+
       fetchSources(selectedProjectId);
-      setTimeout(() => setSuccessMessage(null), 7000);
+      setSuccessMessage(`Seeded ${res.records_ingested} records for scenario "${res.scenario}".`);
+
+      setWorkflowSuccess(true);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Demo Scenario Seeded Successfully",
+        message: `Ingested ${res.records_ingested} records for scenario "${res.scenario}".`,
+        badge: {
+          label: "Seeded",
+          variant: "success",
+        },
+        evidence: [
+          { label: "Scenario", value: res.scenario },
+          { label: "Records Ingested", value: res.records_ingested },
+          { label: "Vector Index", value: "Ready for Semantic Search" },
+        ],
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.status === "running"
+            ? { ...s, status: "failed", detail: message }
+            : s
+        )
+      );
+      setWorkflowSuccess(false);
+      setWorkflowComplete(true);
+      setWorkflowResult({
+        title: "Demo Seeding Failed",
+        message,
+        badge: {
+          label: "Error",
+          variant: "danger",
+        },
+      });
       setError(message || "Failed to seed demonstration scenario.");
     } finally {
       setIsSeeding(false);
@@ -450,6 +662,19 @@ export default function SourcesPage() {
             </div>
           </form>
         </Modal>
+
+        {/* Workflow Execution Dialog */}
+        <WorkflowExecutionDialog
+          isOpen={isWorkflowOpen}
+          onClose={() => setIsWorkflowOpen(false)}
+          title={workflowTitle}
+          description={workflowDescription}
+          steps={workflowSteps}
+          isComplete={workflowComplete}
+          isSuccess={workflowSuccess}
+          result={workflowResult}
+          onDone={() => setIsWorkflowOpen(false)}
+        />
       </div>
     </ProtectedRoute>
   );
